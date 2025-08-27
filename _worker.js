@@ -411,6 +411,536 @@ async function searchInterface() {
 	return html;
 }
 
+/**
+ * 简单的hash函数
+ * @param {string} str 输入字符串
+ * @returns {string} hash结果
+ */
+const simpleHash = (str) => {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash = hash & hash; // 转换为32位整数
+  }
+  return hash.toString();
+};
+
+/**
+ * 生成包含过期时间的token
+ * @param {string} password 用户密码
+ * @returns {string} 生成的token
+ */
+const generateToken = (password) => {
+  // 过期时间：当前时间 + 6小时
+  const expires = Date.now() + 6 * 60 * 60 * 1000;
+  // 简单的token生成逻辑，实际应用中可以使用更安全的方法
+  const tokenContent = {
+    p: simpleHash(password),
+    e: expires,
+  };
+  // 转换为base64字符串
+  return btoa(JSON.stringify(tokenContent));
+};
+
+/**
+ * 验证token是否有效
+ * @param {string} token 待验证的token
+ * @param {string} password 正确密码
+ * @returns {boolean} 是否有效
+ */
+const verifyToken = (token, password) => {
+  try {
+    const tokenContent = JSON.parse(atob(token));
+    // 检查token是否过期
+    if (tokenContent.e < Date.now()) {
+      return false;
+    }
+    // 检查密码hash是否匹配
+    return tokenContent.p === simpleHash(password);
+  } catch (e) {
+    return false;
+  }
+};
+
+/* @returns {boolean} 是否已认证
+ */
+const isAuthenticated = async (request, env) => {
+  const cookie = request.headers.get("Cookie");
+  if (!cookie) return false;
+
+  const cookies = cookie.split(";").map((c) => c.trim());
+  const authCookie = cookies.find((c) => c.startsWith("cf_auth_token="));
+
+  if (!authCookie) return false;
+
+  const token = authCookie.split("=")[1];
+  return verifyToken(token, env.ACCESS_PASSWORD);
+};
+
+/**
+ * 处理登录请求
+ * @param {Request} request 请求对象
+ * @param {Object} env 环境变量
+ */
+const handleLogin = async (request, env) => {
+  const url = new URL(request.url);
+
+  // 如果是GET请求，返回登录页面
+  if (request.method === "GET") {
+    return new Response(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="UTF-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+          <title>量子安全访问系统</title>
+          <style>
+            * {
+              margin: 0;
+              padding: 0;
+              box-sizing: border-box;
+              font-family: "Segoe UI", "Agency FB", sans-serif;
+            }
+
+            body {
+              background: linear-gradient(135deg, #0c0e1d, #1a1b3d, #2c0b3d);
+              min-height: 100vh;
+              display: flex;
+              justify-content: center;
+              align-items: center;
+              overflow: hidden;
+              position: relative;
+            }
+
+            /* 科幻背景元素 */
+            .grid-lines {
+              position: absolute;
+              top: 0;
+              left: 0;
+              width: 100%;
+              height: 100%;
+              background: linear-gradient(
+                  rgba(25, 130, 180, 0.1) 1px,
+                  transparent 1px
+                ),
+                linear-gradient(90deg, rgba(25, 130, 180, 0.1) 1px, transparent 1px);
+              background-size: 30px 30px;
+              z-index: 0;
+            }
+
+            .glowing-circle {
+              position: absolute;
+              width: 400px;
+              height: 400px;
+              border-radius: 50%;
+              background: radial-gradient(
+                circle,
+                rgba(65, 105, 225, 0.4),
+                transparent 70%
+              );
+              top: -150px;
+              right: -150px;
+              filter: blur(30px);
+              animation: pulse 4s infinite alternate;
+            }
+
+            .glowing-circle:nth-child(2) {
+              width: 300px;
+              height: 300px;
+              background: radial-gradient(
+                circle,
+                rgba(138, 43, 226, 0.4),
+                transparent 70%
+              );
+              top: auto;
+              bottom: -100px;
+              left: -100px;
+              animation-delay: -2s;
+            }
+
+            /* 登录卡片 */
+            .login-card {
+              background: rgba(20, 22, 40, 0.6);
+              backdrop-filter: blur(10px);
+              border: 1px solid rgba(65, 105, 225, 0.4);
+              border-radius: 16px;
+              padding: 40px 50px;
+              width: 90%;
+              max-width: 450px;
+              z-index: 1;
+              position: relative;
+              box-shadow: 0 0 30px rgba(65, 105, 225, 0.3),
+                0 0 60px rgba(138, 43, 226, 0.1);
+              overflow: hidden;
+            }
+
+            .login-card::before {
+              content: "";
+              position: absolute;
+              top: -2px;
+              left: -2px;
+              right: -2px;
+              bottom: -2px;
+              background: linear-gradient(45deg, #4169e1, #8a2be2, #4169e1, #8a2be2);
+              z-index: -1;
+              border-radius: 18px;
+              animation: border-animate 4s linear infinite;
+              background-size: 500% 500%;
+            }
+
+            .login-card::after {
+              content: "";
+              position: absolute;
+              top: 0;
+              left: 0;
+              right: 0;
+              bottom: 0;
+              background: inherit;
+              border-radius: 16px;
+              z-index: -1;
+            }
+
+            .card-header {
+              text-align: center;
+              margin-bottom: 35px;
+            }
+
+            .card-header h1 {
+              color: #e0e0ff;
+              font-size: 2.2rem;
+              letter-spacing: 2px;
+              text-transform: uppercase;
+              text-shadow: 0 0 10px rgba(65, 105, 225, 0.8);
+              margin-bottom: 10px;
+              font-weight: 600;
+            }
+
+            .card-header p {
+              color: #a0a0d0;
+              font-size: 1rem;
+              letter-spacing: 1px;
+            }
+
+            /* 输入框样式 */
+            .input-group {
+              margin-bottom: 30px;
+              position: relative;
+            }
+
+            .input-group label {
+              display: block;
+              color: #a0a0d0;
+              margin-bottom: 8px;
+              font-size: 0.9rem;
+              letter-spacing: 1px;
+            }
+
+            .input-field {
+              width: 100%;
+              background: rgba(10, 12, 30, 0.5);
+              border: 1px solid rgba(65, 105, 225, 0.3);
+              border-radius: 8px;
+              padding: 14px 20px;
+              color: #e0e0ff;
+              font-size: 1rem;
+              letter-spacing: 1px;
+              transition: all 0.3s ease;
+            }
+
+            .input-field:focus {
+              outline: none;
+              border-color: #4169e1;
+              box-shadow: 0 0 15px rgba(65, 105, 225, 0.5);
+            }
+
+            .input-field::placeholder {
+              color: #6060a0;
+            }
+
+            /* 按钮样式 */
+            .submit-btn {
+              width: 100%;
+              background: linear-gradient(45deg, #4169e1, #8a2be2);
+              color: white;
+              border: none;
+              border-radius: 8px;
+              padding: 16px;
+              font-size: 1.1rem;
+              font-weight: 600;
+              letter-spacing: 2px;
+              text-transform: uppercase;
+              cursor: pointer;
+              transition: all 0.3s ease;
+              position: relative;
+              overflow: hidden;
+              box-shadow: 0 5px 20px rgba(65, 105, 225, 0.4);
+            }
+
+            .submit-btn::after {
+              content: "";
+              position: absolute;
+              top: -50%;
+              left: -50%;
+              width: 200%;
+              height: 200%;
+              background: rgba(255, 255, 255, 0.1);
+              transform: rotate(30deg);
+              transition: all 0.6s ease;
+            }
+
+            .submit-btn:hover {
+              transform: translateY(-3px);
+              box-shadow: 0 8px 25px rgba(65, 105, 225, 0.6);
+            }
+
+            .submit-btn:hover::after {
+              transform: rotate(30deg) translate(20%, 20%);
+            }
+
+            .submit-btn:active {
+              transform: translateY(0);
+            }
+
+            /* 科幻元素 */
+            .scan-line {
+              position: absolute;
+              top: 0;
+              left: 0;
+              width: 100%;
+              height: 3px;
+              background: linear-gradient(
+                90deg,
+                transparent,
+                #4169e1,
+                #8a2be2,
+                transparent
+              );
+              animation: scan 4s linear infinite;
+            }
+
+            .terminal-dots {
+              position: absolute;
+              bottom: 25px;
+              left: 30px;
+              display: flex;
+              gap: 6px;
+            }
+
+            .dot {
+              width: 8px;
+              height: 8px;
+              border-radius: 50%;
+              background: #4169e1;
+              opacity: 0.7;
+              animation: dot-pulse 1.4s infinite ease-in-out;
+            }
+
+            .dot:nth-child(2) {
+              animation-delay: 0.2s;
+            }
+            .dot:nth-child(3) {
+              animation-delay: 0.4s;
+            }
+
+            /* 动画 */
+            @keyframes pulse {
+              0% {
+                opacity: 0.3;
+              }
+              100% {
+                opacity: 0.6;
+              }
+            }
+
+            @keyframes border-animate {
+              0% {
+                background-position: 0% 0%;
+              }
+              100% {
+                background-position: 500% 0%;
+              }
+            }
+
+            @keyframes scan {
+              0% {
+                transform: translateY(0);
+              }
+              100% {
+                transform: translateY(100vh);
+              }
+            }
+
+            @keyframes dot-pulse {
+              0%,
+              100% {
+                transform: scale(1);
+                opacity: 0.7;
+              }
+              50% {
+                transform: scale(1.3);
+                opacity: 1;
+              }
+            }
+
+            /* 响应式调整 */
+            @media (max-width: 500px) {
+              .login-card {
+                padding: 30px;
+              }
+
+              .card-header h1 {
+                font-size: 1.8rem;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="grid-lines"></div>
+          <div class="glowing-circle"></div>
+          <div class="glowing-circle"></div>
+
+          <div class="login-card">
+            <div class="scan-line"></div>
+
+            <div class="card-header">
+              <h1>量子安全通道</h1>
+              <p>请验证您的访问凭证</p>
+            </div>
+
+            <form method="POST">
+              <div class="input-group">
+                <label for="password">访问密钥</label>
+                <input
+                  type="password"
+                  id="password"
+                  name="password"
+                  class="input-field"
+                  placeholder="请输入访问密钥"
+                  required
+                  autocomplete="off"
+                  autocorrect="off"
+                  autocapitalize="off"
+                  spellcheck="false"
+                />
+              </div>
+
+              <input type="hidden" name="redirect" value="${url.searchParams.get('redirect') || '/' }">
+
+              <button type="submit" class="submit-btn"><span>身份验证</span></button>
+            </form>
+
+            <div class="terminal-dots">
+              <div class="dot"></div>
+              <div class="dot"></div>
+              <div class="dot"></div>
+            </div>
+          </div>
+
+          <script>
+            // 添加简单的粒子效果
+            document.addEventListener("DOMContentLoaded", function () {
+              const canvas = document.createElement("canvas");
+              const ctx = canvas.getContext("2d");
+              canvas.width = window.innerWidth;
+              canvas.height = window.innerHeight;
+              canvas.style.position = "fixed";
+              canvas.style.top = "0";
+              canvas.style.left = "0";
+              canvas.style.zIndex = "0";
+              document.body.appendChild(canvas);
+
+              const particles = [];
+              const particleCount = 100;
+              const colors = ["#4169e1", "#8a2be2", "#5d42f5", "#3c8ce7"];
+
+              class Particle {
+                constructor() {
+                  this.x = Math.random() * canvas.width;
+                  this.y = Math.random() * canvas.height;
+                  this.size = Math.random() * 2 + 0.5;
+                  this.speedX = (Math.random() - 0.5) * 0.5;
+                  this.speedY = (Math.random() - 0.5) * 0.5;
+                  this.color = colors[Math.floor(Math.random() * colors.length)];
+                }
+
+                update() {
+                  this.x += this.speedX;
+                  this.y += this.speedY;
+
+                  if (this.x < 0 || this.x > canvas.width) this.speedX *= -1;
+                  if (this.y < 0 || this.y > canvas.height) this.speedY *= -1;
+                }
+
+                draw() {
+                  ctx.fillStyle = this.color;
+                  ctx.beginPath();
+                  ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                  ctx.fill();
+                }
+              }
+
+              function init() {
+                for (let i = 0; i < particleCount; i++) {
+                  particles.push(new Particle());
+                }
+              }
+
+              function animate() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                particles.forEach((particle) => {
+                  particle.update();
+                  particle.draw();
+                });
+
+                requestAnimationFrame(animate);
+              }
+
+              init();
+              animate();
+
+              // 响应窗口大小变化
+              window.addEventListener("resize", function () {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+              });
+            });
+          </script>
+        </body>
+      </html>
+    `,{
+      headers: { "Content-Type": "text/html" },
+    });
+  }
+
+  // 如果是POST请求，验证密码
+  if (request.method === "POST") {
+    const formData = await request.formData();
+    const passwordI = formData.get("password");
+    const redirectI = formData.get("redirect") || "/";
+
+    // 验证密码是否正确（从环境变量获取正确密码）
+    if (passwordI === env.ACCESS_PASSWORD) {
+      // 设置6小时过期
+      const expires = new Date(Date.now() + 6 * 60 * 60 * 1000).toUTCString();
+      // return response;
+      return new Response(null, {
+        status: 302,
+        headers: {
+          Location: `${url.protocol}//${url.host}${decodeURIComponent(redirectI)}`,
+          "Set-Cookie": `cf_auth_token=${generateToken(passwordI)}; Path=/; HttpOnly; Secure; SameSite=Lax; Expires=${expires}`,
+        },
+      });
+    } else {
+      // 密码错误，返回错误信息
+      return new Response("Invalid password", { status: 401 });
+    }
+  }
+
+  return new Response("Method not allowed", { status: 405 });
+};
+
 export default {
 	async fetch(request, env, ctx) {
 		const getReqHeader = (key) => request.headers.get(key); // 获取请求头
@@ -453,6 +983,19 @@ export default {
 			});
 		} else if ((userAgent && userAgent.includes('mozilla')) || hubParams.some(param => url.pathname.includes(param))) {
 			if (url.pathname == '/') {
+				if (env.ACCESS_PASSWORD) {
+			      if (url.pathname === "/cf-login") return handleLogin(request, env);
+			      // 检查是否是登录页面或静态资源
+			      if (!(await isAuthenticated(request, env))) {
+			        // 未登录且不是公开路由，重定向到登录页面
+			        return new Response(null, {
+			          status: 302,
+			          headers: {
+			            Location: `${url.protocol}//${url.host}/cf-login?redirect=${encodeURIComponent(url.pathname)}`,
+			          },
+			        });
+			      }
+			    }
 				if (env.URL302) {
 					return Response.redirect(env.URL302, 302);
 				} else if (env.URL) {
