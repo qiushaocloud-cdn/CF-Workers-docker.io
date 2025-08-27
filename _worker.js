@@ -949,7 +949,21 @@ export default {
 		const userAgentHeader = request.headers.get('User-Agent');
 		const userAgent = userAgentHeader ? userAgentHeader.toLowerCase() : "null";
 		if (env.UA) 屏蔽爬虫UA = 屏蔽爬虫UA.concat(await ADD(env.UA));
-		const workers_url = `https://${url.hostname}`;
+		const workers_url = `${url.protocol}//${url.hostname}`;
+
+		if (env.ACCESS_PASSWORD && (url.pathname === '' || url.pathname === '/' || url.pathname === '/cf-login')) {
+		  if (url.pathname === "/cf-login") return handleLogin(request, env);
+		  // 检查是否是登录页面或静态资源
+		  if (!(await isAuthenticated(request, env))) {
+			// 未登录且不是公开路由，重定向到登录页面
+			return new Response(null, {
+			  status: 302,
+			  headers: {
+				Location: `${url.protocol}//${url.host}/cf-login?redirect=${encodeURIComponent(url.pathname)}`,
+			  },
+			});
+		  }
+		}
 
 		// 获取请求参数中的 ns
 		const ns = url.searchParams.get('ns');
@@ -983,19 +997,6 @@ export default {
 			});
 		} else if ((userAgent && userAgent.includes('mozilla')) || hubParams.some(param => url.pathname.includes(param))) {
 			if (url.pathname == '/') {
-				if (env.ACCESS_PASSWORD) {
-			      if (url.pathname === "/cf-login") return handleLogin(request, env);
-			      // 检查是否是登录页面或静态资源
-			      if (!(await isAuthenticated(request, env))) {
-			        // 未登录且不是公开路由，重定向到登录页面
-			        return new Response(null, {
-			          status: 302,
-			          headers: {
-			            Location: `${url.protocol}//${url.host}/cf-login?redirect=${encodeURIComponent(url.pathname)}`,
-			          },
-			        });
-			      }
-			    }
 				if (env.URL302) {
 					return Response.redirect(env.URL302, 302);
 				} else if (env.URL) {
